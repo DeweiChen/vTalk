@@ -18,11 +18,6 @@ namespace vTalk.VRMModel
 {
     public partial class VRMLoader : MonoBehaviour
     {
-#if UNITY_WEBGL
-        [DllImport("__Internal")]
-        private static extern void WebGLFileDialog();
-#endif
-
         #region UI
 
         [SerializeField]
@@ -56,7 +51,10 @@ namespace vTalk.VRMModel
         [SerializeField]
         HumanPoseClip m_pose = default;
 
-        Loaded m_loaded;
+        List<Loaded> m_loadedList = new List<Loaded>();
+
+        [SerializeField]
+        UnityEngine.UI.Button m_join = default;
 
         private void Reset()
         {
@@ -73,6 +71,11 @@ namespace vTalk.VRMModel
                 LoadMotion("tmp.bvh", m_motion.text);
             }
 
+            m_join.onClick.AddListener(() =>
+            {
+                LoadDefaultVRM();
+            });
+
             LoadDefaultVRM();
         }
 
@@ -86,11 +89,11 @@ namespace vTalk.VRMModel
 
         private void Update()
         {
-            if (m_loaded != null)
+            foreach (Loaded loaded in m_loadedList)
             {
-                m_loaded.EnableLipSyncValue = m_enableLipSync;
-                m_loaded.EnableBlinkValue = m_enableAutoBlink;
-                m_loaded.Update();
+                loaded.EnableLipSyncValue = m_enableLipSync;
+                loaded.EnableBlinkValue = m_enableAutoBlink;
+                loaded.Update();
             }
         }
 
@@ -209,11 +212,7 @@ namespace vTalk.VRMModel
         {
             if (useAsync)
             {
-#if UNITY_WEBGL
-                return new RuntimeOnlyNoThreadAwaitCaller();
-#else
                 return new RuntimeOnlyAwaitCaller();
-#endif
             }
             else
             {
@@ -223,13 +222,6 @@ namespace vTalk.VRMModel
 
         void SetModel(RuntimeGltfInstance instance)
         {
-            // cleanup
-            if (m_loaded != null)
-            {
-                m_loaded.Dispose();
-                m_loaded = null;
-            }
-
             if (m_useFastSpringBone)
             {
                 var _ = FastSpringBoneReplacer.ReplaceAsync(instance.Root);
@@ -238,16 +230,34 @@ namespace vTalk.VRMModel
             instance.EnableUpdateWhenOffscreen();
             instance.ShowMeshes();
 
-            m_loaded = new Loaded(instance, m_src, m_target.transform);
+            var loaded = new Loaded(instance, m_src, m_target.transform);
+            loaded.SetPosition(GetWantGroundPosition());
+            m_loadedList.Add(loaded);
+        }
+
+        private Vector3 GetWantGroundPosition()
+        {
+            return m_loadedList.Count *
+                (m_loadedList.Count % 2 == 0
+                ? Vector3.right
+                : Vector3.left)/2;
         }
 
         void SetMotion(HumanPoseTransfer src)
         {
             m_src = src;
             src.GetComponent<Renderer>().enabled = false;
-            if (m_loaded != null)
+            foreach (Loaded loaded in m_loadedList)
             {
-                m_loaded.EnableBvh(src);
+                loaded.EnableBvh(src);
+            }
+        }
+
+        void OnDestroy()
+        {
+            foreach (Loaded loaded in m_loadedList)
+            {
+                loaded.Dispose();
             }
         }
     }
